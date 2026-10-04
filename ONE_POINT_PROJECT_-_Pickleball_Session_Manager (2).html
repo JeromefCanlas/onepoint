@@ -1,0 +1,1404 @@
+<!DOCTYPE html>
+<html lang="en" class="dark h-full bg-slate-950 text-slate-100">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ONE POINT PROJECT - Pickleball Session Manager</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- PeerJS for WebRTC Realtime Cloud Sync across Devices -->
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <!-- QRCode.js for reliable local SVG/Canvas QR generation -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <!-- Google Fonts: Inter & Montserrat -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Montserrat:wght@700;800;900&display=swap" rel="stylesheet">
+
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            50: '#f7fee7',
+                            100: '#ecfccb',
+                            400: '#a3e635',
+                            500: '#84cc16',
+                            neon: '#ccff00',
+                            accent: '#00e676',
+                            dark: '#090d16',
+                            panel: '#111827',
+                            card: '#1f2937'
+                        }
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        display: ['Montserrat', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #0f172a; }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 9999px; }
+        ::-webkit-scrollbar-thumb:hover { background: #475569; }
+
+        .glass-panel {
+            background: rgba(17, 24, 39, 0.85);
+            backdrop-filter: blur(14px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .no-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+
+        /* STRICT SPECTATOR READ-ONLY UI SECURITY GUARDS */
+        body.mode-spectator .admin-only {
+            display: none !important;
+        }
+        body.mode-spectator input, 
+        body.mode-spectator button:not(.tab-btn):not(.public-btn),
+        body.mode-spectator select {
+            pointer-events: none !important;
+        }
+        body.mode-spectator .tab-btn,
+        body.mode-spectator .public-btn {
+            pointer-events: auto !important;
+        }
+    </style>
+</head>
+<body class="h-full flex flex-col font-sans overflow-x-hidden antialiased bg-slate-950 text-slate-100">
+
+    <header class="glass-panel sticky top-0 z-40 border-b border-slate-800/80 px-4 lg:px-8 py-3 flex flex-wrap items-center justify-between gap-4">
+        <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-xl bg-brand-neon text-slate-950 flex items-center justify-center font-black text-xl shadow-lg shadow-brand-neon/20">
+                <i class="fa-solid fa-table-tennis-paddle-ball text-xl"></i>
+            </div>
+            <div>
+                <div class="flex items-center gap-2">
+                    <h1 class="font-display font-extrabold text-xl tracking-tight text-white flex items-center gap-2">
+                        ONE POINT <span class="text-brand-neon">PROJECT</span>
+                    </h1>
+                    <span id="role-badge" class="bg-brand-neon/10 text-brand-neon text-[10px] px-2.5 py-0.5 rounded-full border border-brand-neon/30 font-bold uppercase tracking-wider">
+                        Admin Controller
+                    </span>
+                </div>
+                <p class="text-xs text-slate-400 font-medium hidden sm:block">Fair Play & Partner Rotation Manager</p>
+            </div>
+        </div>
+
+        <div class="flex items-center gap-2 sm:gap-4 flex-wrap">
+            <!-- Realtime Multi-Device Connection Badge -->
+            <div id="sync-badge" class="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-800 text-xs font-semibold">
+                <span id="sync-indicator" class="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse"></span>
+                <span id="sync-text" class="text-slate-300">Connecting Relay...</span>
+            </div>
+
+            <!-- ADMIN-ONLY CONTROLS -->
+            <div class="admin-only flex items-center gap-2">
+                <button onclick="openQrModal()" class="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-brand-neon rounded-xl text-xs font-bold flex items-center gap-2 transition border border-brand-neon/30 shadow-sm">
+                    <i class="fa-solid fa-qrcode text-base"></i>
+                    <span class="hidden sm:inline">Player Spectator QR</span>
+                </button>
+
+                <button onclick="triggerGlobalAutoMatch()" class="px-4 py-2 bg-brand-neon text-slate-950 hover:bg-lime-400 rounded-xl text-xs font-extrabold flex items-center gap-2 transition shadow-md shadow-brand-neon/20">
+                    <i class="fa-solid fa-wand-magic-sparkles"></i> Auto Match All
+                </button>
+            </div>
+
+            <!-- SPECTATOR BANNER BADGE -->
+            <div class="spectator-only hidden flex items-center gap-2 px-3 py-1.5 bg-amber-500/10 text-amber-400 border border-amber-500/30 rounded-xl text-xs font-bold">
+                <i class="fa-solid fa-lock"></i> READ-ONLY PLAYER VIEW
+            </div>
+        </div>
+    </header>
+
+    <div class="bg-slate-900/90 border-b border-slate-800/80 px-4 lg:px-8">
+        <nav class="flex space-x-2 sm:space-x-6 overflow-x-auto text-sm font-medium no-scrollbar" id="nav-tabs">
+            <button onclick="switchTab('courts')" id="tab-courts" class="tab-btn active border-b-2 border-brand-neon text-brand-neon py-3 px-2 flex items-center gap-2 whitespace-nowrap font-semibold">
+                <i class="fa-solid fa-layer-group"></i> Live Courts & Queue
+                <span id="badge-active-matches" class="bg-slate-800 text-slate-300 text-xs px-2 py-0.5 rounded-full font-bold">0 Active</span>
+            </button>
+            <button onclick="switchTab('roster')" id="tab-roster" class="tab-btn text-slate-400 hover:text-slate-200 py-3 px-2 flex items-center gap-2 whitespace-nowrap">
+                <i class="fa-solid fa-users"></i> Player Roster & Locks
+            </button>
+            <button onclick="switchTab('matrix')" id="tab-matrix" class="tab-btn text-slate-400 hover:text-slate-200 py-3 px-2 flex items-center gap-2 whitespace-nowrap">
+                <i class="fa-solid fa-diagram-project"></i> Partner Matrix
+            </button>
+            <button onclick="switchTab('leaderboard')" id="tab-leaderboard" class="tab-btn text-slate-400 hover:text-slate-200 py-3 px-2 flex items-center gap-2 whitespace-nowrap">
+                <i class="fa-solid fa-trophy"></i> Leaderboard (Win/Loss)
+            </button>
+            <button onclick="switchTab('history')" id="tab-history" class="tab-btn text-slate-400 hover:text-slate-200 py-3 px-2 flex items-center gap-2 whitespace-nowrap">
+                <i class="fa-solid fa-clock-rotate-left"></i> Match Log
+            </button>
+        </nav>
+    </div>
+
+    <main class="flex-1 p-4 lg:p-8 max-w-7xl mx-auto w-full space-y-6">
+
+        <!-- TAB 1: LIVE COURTS & QUEUE -->
+        <section id="view-courts" class="tab-content space-y-8">
+            <div>
+                <div class="flex items-center justify-between mb-4">
+                    <div class="flex items-center gap-2">
+                        <h2 class="font-display text-lg font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                            <span class="w-2.5 h-2.5 rounded-full bg-brand-neon inline-block animate-pulse"></span>
+                            Active Courts
+                        </h2>
+                    </div>
+                    <div class="admin-only flex gap-2">
+                        <button onclick="addNewCourt()" class="text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-1.5 rounded-xl border border-slate-700 flex items-center gap-1.5 transition">
+                            <i class="fa-solid fa-plus text-brand-neon"></i> Add Court
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Dynamic Courts Grid -->
+                <div id="courts-grid" class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <!-- Courts Render Here -->
+                </div>
+            </div>
+
+            <!-- Queue & Partner Mode Engine Controls -->
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 pt-2">
+                <div class="lg:col-span-2 glass-panel rounded-2xl p-5 border border-slate-800">
+                    <div class="flex items-center justify-between mb-4 pb-3 border-b border-slate-800">
+                        <div>
+                            <h3 class="font-display font-bold text-slate-100 text-base flex items-center gap-2">
+                                <i class="fa-solid fa-scale-balanced text-brand-neon"></i> Waiting Queue & Fair Rest Tracker
+                            </h3>
+                            <p class="text-xs text-slate-400">Queue prioritizes players with fewest games and longest bench wait</p>
+                        </div>
+                        <div class="admin-only flex items-center gap-2">
+                            <button onclick="sortQueueByFairness()" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold rounded-lg border border-slate-700 flex items-center gap-1.5">
+                                <i class="fa-solid fa-arrow-down-short-wide text-brand-neon"></i> Re-sort Fair Queue
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Queue Player Cards -->
+                    <div id="queue-players-list" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                        <!-- Dynamic Queue Cards Render Here -->
+                    </div>
+                </div>
+
+                <!-- Admin Partner Matchmaking Controls -->
+                <div class="admin-only glass-panel rounded-2xl p-5 border border-slate-800 flex flex-col justify-between space-y-4">
+                    <div>
+                        <h3 class="font-display font-bold text-slate-100 text-base mb-1 flex items-center gap-2">
+                            <i class="fa-solid fa-user-group text-brand-neon"></i> Partner Matching Logic
+                        </h3>
+                        <p class="text-xs text-slate-400 mb-4">Select how partners are assigned in doubles games</p>
+
+                        <div class="space-y-2.5" id="partner-mode-selector">
+                            <label class="cursor-pointer block p-3 rounded-xl border border-brand-neon/40 bg-brand-neon/5 hover:border-brand-neon transition">
+                                <div class="flex items-start gap-3">
+                                    <input type="radio" name="partnerMatchingMode" value="rotate" class="mt-1 text-brand-neon focus:ring-brand-neon bg-slate-950 border-slate-700" checked onchange="setPartnerMatchingMode('rotate')">
+                                    <div>
+                                        <div class="text-xs font-extrabold text-brand-neon flex items-center gap-1.5">
+                                            <i class="fa-solid fa-arrows-rotate"></i> Max Partner Diversity (Default)
+                                        </div>
+                                        <div class="text-[11px] text-slate-300 mt-0.5">Rotates players to pair with partners they've played with the least.</div>
+                                    </div>
+                                </div>
+                            </label>
+
+                            <label class="cursor-pointer block p-3 rounded-xl border border-slate-800 bg-slate-900/60 hover:border-slate-700 transition">
+                                <div class="flex items-start gap-3">
+                                    <input type="radio" name="partnerMatchingMode" value="locked" class="mt-1 text-brand-neon focus:ring-brand-neon bg-slate-950 border-slate-700" onchange="setPartnerMatchingMode('locked')">
+                                    <div>
+                                        <div class="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+                                            <i class="fa-solid fa-lock text-amber-400"></i> Fixed / Locked Partner Priority
+                                        </div>
+                                        <div class="text-[11px] text-slate-400">Strictly respects assigned partner locks set in the roster.</div>
+                                    </div>
+                                </div>
+                            </label>
+
+                            <label class="cursor-pointer block p-3 rounded-xl border border-slate-800 bg-slate-900/60 hover:border-slate-700 transition">
+                                <div class="flex items-start gap-3">
+                                    <input type="radio" name="partnerMatchingMode" value="random" class="mt-1 text-brand-neon focus:ring-brand-neon bg-slate-950 border-slate-700" onchange="setPartnerMatchingMode('random')">
+                                    <div>
+                                        <div class="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+                                            <i class="fa-solid fa-shuffle text-cyan-400"></i> Random / Mixed Doubles
+                                        </div>
+                                        <div class="text-[11px] text-slate-400">Pairs players dynamically while keeping total game counts balanced.</div>
+                                    </div>
+                                </div>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="pt-2 border-t border-slate-800">
+                        <button onclick="triggerGlobalAutoMatch()" class="w-full py-2.5 bg-brand-neon text-slate-950 font-bold text-xs rounded-xl hover:bg-lime-400 transition shadow-lg shadow-brand-neon/10 flex items-center justify-center gap-2">
+                            <i class="fa-solid fa-play"></i> Auto Fill Open Courts
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Spectator Info Box -->
+                <div class="spectator-only hidden glass-panel rounded-2xl p-5 border border-brand-neon/30 bg-brand-neon/5 flex flex-col justify-center text-center space-y-3">
+                    <div class="w-12 h-12 rounded-2xl bg-brand-neon text-slate-950 flex items-center justify-center font-bold text-xl mx-auto shadow-lg shadow-brand-neon/20">
+                        <i class="fa-solid fa-eye"></i>
+                    </div>
+                    <h3 class="font-display font-bold text-white text-base">Live Player Spectator View</h3>
+                    <p class="text-xs text-slate-300 leading-relaxed">
+                        Updates live in real-time. Fair play logic guarantees everyone gets equal game time and partner diversity!
+                    </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- TAB 2: PLAYER ROSTER & PARTNER LOCKS -->
+        <section id="view-roster" class="tab-content hidden space-y-6">
+            <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                <div>
+                    <h2 class="font-display text-xl font-extrabold text-white">Player Roster & Partner Lock System</h2>
+                    <p class="text-xs text-slate-400">Manage players, DUPR ratings, and set fixed partner pairs for tournament teams</p>
+                </div>
+                <button onclick="openAddPlayerModal()" class="admin-only px-4 py-2 bg-brand-neon text-slate-950 font-bold rounded-xl text-xs hover:bg-lime-400 transition flex items-center gap-2 shadow-md shadow-brand-neon/20">
+                    <i class="fa-solid fa-user-plus"></i> Add Player
+                </button>
+            </div>
+
+            <div class="glass-panel rounded-2xl border border-slate-800 overflow-hidden">
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse">
+                        <thead>
+                            <tr class="bg-slate-900/80 border-b border-slate-800 text-[11px] uppercase tracking-wider text-slate-400">
+                                <th class="p-4">Player</th>
+                                <th class="p-4">DUPR</th>
+                                <th class="p-4">Status</th>
+                                <th class="p-4">Assigned Partner Lock</th>
+                                <th class="p-4 text-center">Games Played</th>
+                                <th class="p-4">Record (W / L)</th>
+                                <th class="admin-only p-4 text-right">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="roster-table-body" class="divide-y divide-slate-800/60 text-sm">
+                            <!-- Dynamic Roster Rows -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- TAB 3: PARTNER DIVERSITY MATRIX -->
+        <section id="view-matrix" class="tab-content hidden space-y-6">
+            <div>
+                <h2 class="font-display text-xl font-extrabold text-white">Partner Diversity Matrix</h2>
+                <p class="text-xs text-slate-400">Tracks how many times players have partnered together to ensure max partner mixing</p>
+            </div>
+
+            <div class="glass-panel rounded-2xl border border-slate-800 p-4 overflow-x-auto">
+                <table class="w-full text-xs text-center border-collapse" id="partner-matrix-table">
+                    <!-- Dynamic Partner Matrix Render -->
+                </table>
+            </div>
+        </section>
+
+        <!-- TAB 4: LEADERBOARD -->
+        <section id="view-leaderboard" class="tab-content hidden space-y-6">
+            <div class="flex items-center justify-between">
+                <div>
+                    <h2 class="font-display text-xl font-extrabold text-white">Win / Loss Standings</h2>
+                    <p class="text-xs text-slate-400">Rankings based strictly on total Wins, Win Rate %, and total Games Played</p>
+                </div>
+            </div>
+
+            <div class="glass-panel rounded-2xl border border-slate-800 overflow-hidden">
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse">
+                        <thead>
+                            <tr class="bg-slate-900/80 border-b border-slate-800 text-[11px] uppercase tracking-wider text-slate-400">
+                                <th class="p-4 text-center">Rank</th>
+                                <th class="p-4">Player</th>
+                                <th class="p-4">DUPR</th>
+                                <th class="p-4 text-center">Total Played</th>
+                                <th class="p-4 text-center">Wins</th>
+                                <th class="p-4 text-center">Losses</th>
+                                <th class="p-4 text-center">Win Rate %</th>
+                                <th class="p-4 text-center">Streak</th>
+                            </tr>
+                        </thead>
+                        <tbody id="leaderboard-table-body" class="divide-y divide-slate-800/60 text-sm">
+                            <!-- Dynamic Leaderboard Rows -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- TAB 5: MATCH LOG -->
+        <section id="view-history" class="tab-content hidden space-y-6">
+            <div>
+                <h2 class="font-display text-xl font-extrabold text-white">Completed Match Log</h2>
+                <p class="text-xs text-slate-400">Audit trail of finished games</p>
+            </div>
+
+            <div class="glass-panel rounded-2xl border border-slate-800 overflow-hidden">
+                <div id="history-log-list" class="divide-y divide-slate-800/60">
+                    <!-- Dynamic Match Log -->
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- MODAL 1: QR CODE PLAYER SPECTATOR (ADMIN ONLY) -->
+    <div id="modal-qr" class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md hidden flex items-center justify-center p-4">
+        <div class="glass-panel w-full max-w-md rounded-2xl border border-slate-800 p-6 space-y-5 shadow-2xl text-center">
+            <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+                <h3 class="font-display font-bold text-base text-white flex items-center gap-2">
+                    <i class="fa-solid fa-qrcode text-brand-neon"></i> ONE POINT PROJECT - Player QR
+                </h3>
+                <button onclick="closeQrModal()" class="text-slate-400 hover:text-white public-btn"><i class="fa-solid fa-xmark text-lg"></i></button>
+            </div>
+
+            <p class="text-xs text-slate-300">Players scan this code to view active courts, rest queues, and equal rotation stats live on their mobile phones!</p>
+
+            <div class="bg-white p-4 rounded-2xl inline-block shadow-xl my-2 border-4 border-brand-neon">
+                <div id="qrcode-canvas" class="flex justify-center"></div>
+            </div>
+
+            <div class="text-[11px] text-slate-400 bg-slate-900 p-3 rounded-xl border border-slate-800 flex items-center justify-between gap-2">
+                <span class="truncate font-mono text-[10px]" id="qr-url-text">Generating link...</span>
+                <button onclick="copyQrUrl()" class="px-3 py-1 bg-brand-neon text-slate-950 hover:bg-lime-400 rounded text-xs font-bold public-btn shrink-0">Copy Link</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL 2: ADD / EDIT PLAYER (ADMIN ONLY) -->
+    <div id="modal-player" class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm hidden flex items-center justify-center p-4">
+        <div class="glass-panel w-full max-w-md rounded-2xl border border-slate-800 p-6 space-y-5 shadow-2xl">
+            <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+                <h3 id="modal-player-title" class="font-display font-bold text-base text-white">Add New Player</h3>
+                <button onclick="closePlayerModal()" class="text-slate-400 hover:text-white public-btn"><i class="fa-solid fa-xmark text-lg"></i></button>
+            </div>
+            
+            <form id="form-player" onsubmit="handleSavePlayer(event)" class="space-y-4">
+                <input type="hidden" id="player-id">
+                <div>
+                    <label class="block text-xs font-semibold text-slate-300 mb-1">Player Name</label>
+                    <input type="text" id="player-name" required placeholder="e.g. Jordan Reed" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-brand-neon">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-300 mb-1">DUPR Skill Rating</label>
+                    <input type="number" step="0.1" min="1.0" max="6.0" id="player-rating" required value="3.5" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-brand-neon">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-300 mb-1">Assigned Partner Lock (Optional)</label>
+                    <select id="player-partner-lock" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-brand-neon">
+                        <option value="">-- No Lock (Rotate Freely) --</option>
+                    </select>
+                </div>
+
+                <div class="pt-3 flex items-center justify-end gap-3 border-t border-slate-800">
+                    <button type="button" onclick="closePlayerModal()" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold public-btn">Cancel</button>
+                    <button type="submit" class="px-5 py-2 bg-brand-neon text-slate-950 font-bold rounded-xl text-xs hover:bg-lime-400 transition public-btn">Save Player</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- TOAST NOTIFICATION CONTAINER -->
+    <div id="toast-container" class="fixed bottom-5 right-5 z-50 flex flex-col gap-2 pointer-events-none"></div>
+
+    <script>
+        let isAdmin = true;
+        let sessionId = null;
+        let peer = null;
+        let activePeerConns = [];
+        let broadcastChannel = null;
+        let timerInterval = null;
+
+        let sessionConfig = { 
+            partnerMatchingMode: "rotate" // 'rotate' (Max diversity), 'locked' (Respect locks), 'random'
+        };
+
+        let players = [
+            { id: "p1", name: "Dave Miller", rating: 4.2, status: "active", lockedPartnerId: "p2", wins: 2, losses: 1, gamesPlayed: 3, lastMatchTime: Date.now() - (15 * 60 * 1000), streak: 2 },
+            { id: "p2", name: "Sarah Jenkins", rating: 4.0, status: "active", lockedPartnerId: "p1", wins: 2, losses: 1, gamesPlayed: 3, lastMatchTime: Date.now() - (15 * 60 * 1000), streak: 2 },
+            { id: "p3", name: "Carlos Ray", rating: 3.8, status: "active", lockedPartnerId: null, wins: 1, losses: 2, gamesPlayed: 3, lastMatchTime: Date.now() - (15 * 60 * 1000), streak: 0 },
+            { id: "p4", name: "Elena Rostova", rating: 3.9, status: "active", lockedPartnerId: null, wins: 1, losses: 2, gamesPlayed: 3, lastMatchTime: Date.now() - (15 * 60 * 1000), streak: 0 },
+            { id: "p5", name: "Marcus Vance", rating: 3.2, status: "active", lockedPartnerId: null, wins: 1, losses: 1, gamesPlayed: 2, lastMatchTime: Date.now() - (30 * 60 * 1000), streak: 1 },
+            { id: "p6", name: "Chloe Bennett", rating: 3.1, status: "active", lockedPartnerId: null, wins: 1, losses: 1, gamesPlayed: 2, lastMatchTime: Date.now() - (28 * 60 * 1000), streak: 1 },
+            { id: "p7", name: "Kenji Sato", rating: 4.5, status: "active", lockedPartnerId: null, wins: 0, losses: 1, gamesPlayed: 1, lastMatchTime: Date.now() - (45 * 60 * 1000), streak: 0 },
+            { id: "p8", name: "Jessica Taylor", rating: 4.3, status: "active", lockedPartnerId: null, wins: 0, losses: 1, gamesPlayed: 1, lastMatchTime: Date.now() - (40 * 60 * 1000), streak: 0 }
+        ];
+
+        // Track partner history count pair matrix: { "p1_p2": 2, "p3_p4": 1 }
+        let partnerHistoryMatrix = {
+            "p1_p2": 2,
+            "p3_p4": 1,
+            "p5_p6": 1,
+            "p7_p8": 1
+        };
+
+        let courts = [
+            { id: "c1", name: "Court 1", status: "active", teamA: ["p1", "p2"], teamB: ["p3", "p4"], startTime: Date.now() - (6 * 60 * 1000) },
+            { id: "c2", name: "Court 2", status: "empty", teamA: [], teamB: [], startTime: null }
+        ];
+
+        let queue = ["p7", "p8", "p5", "p6"];
+        let matchHistory = [];
+
+        window.onload = function() {
+            detectModeAndSession();
+            initCrossTabBroadcast();
+            initRealtimeRelay();
+            startTimerLoop();
+            sortQueueByFairness();
+            renderAll();
+        };
+
+        function detectModeAndSession() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const mode = urlParams.get('mode') || urlParams.get('view');
+            const targetSession = urlParams.get('session');
+
+            if (mode === 'spectator' || mode === 'player') {
+                isAdmin = false;
+                document.body.classList.add('mode-spectator');
+                document.getElementById('role-badge').innerText = "SPECTATOR VIEW";
+                document.getElementById('role-badge').className = "bg-amber-500/10 text-amber-400 text-[10px] px-2.5 py-0.5 rounded-full border border-amber-500/30 font-bold uppercase tracking-wider";
+                
+                document.querySelectorAll('.spectator-only').forEach(el => el.classList.remove('hidden'));
+            } else {
+                isAdmin = true;
+                document.body.classList.remove('mode-spectator');
+            }
+
+            if (targetSession) {
+                sessionId = targetSession;
+            } else {
+                sessionId = "opp_session_" + Math.random().toString(36).substring(2, 8);
+                const newUrl = `${window.location.pathname}?session=${sessionId}`;
+                window.history.replaceState(null, '', newUrl);
+            }
+        }
+
+        function initRealtimeRelay() {
+            const syncText = document.getElementById('sync-text');
+            const syncDot = document.getElementById('sync-indicator');
+
+            if (isAdmin) {
+                const hostPeerId = `one-point-project-${sessionId}`;
+                peer = new Peer(hostPeerId, { debug: 1 });
+
+                peer.on('open', () => {
+                    syncText.innerText = "Host Live & Syncing";
+                    syncDot.className = "w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse";
+                });
+
+                peer.on('connection', (conn) => {
+                    activePeerConns.push(conn);
+                    conn.on('open', () => {
+                        conn.send({
+                            type: "STATE_UPDATE",
+                            payload: getSerializedState()
+                        });
+                        showToast("Spectator connected to session");
+                    });
+
+                    conn.on('close', () => {
+                        activePeerConns = activePeerConns.filter(c => c !== conn);
+                    });
+                });
+
+                peer.on('error', (err) => {
+                    console.warn("PeerJS Host Error:", err);
+                    syncText.innerText = "Host Relay Active";
+                    syncDot.className = "w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse";
+                });
+
+            } else {
+                const hostPeerId = `one-point-project-${sessionId}`;
+                peer = new Peer({ debug: 1 });
+
+                peer.on('open', () => {
+                    connectToHost(hostPeerId);
+                });
+
+                peer.on('error', (err) => {
+                    console.warn("PeerJS Spectator Connection Error:", err);
+                    syncText.innerText = "Reconnecting...";
+                    syncDot.className = "w-2.5 h-2.5 rounded-full bg-amber-400 animate-ping";
+                    setTimeout(() => connectToHost(hostPeerId), 3000);
+                });
+            }
+        }
+
+        function connectToHost(hostPeerId) {
+            const syncText = document.getElementById('sync-text');
+            const syncDot = document.getElementById('sync-indicator');
+
+            const conn = peer.connect(hostPeerId);
+
+            conn.on('open', () => {
+                syncText.innerText = "Connected to Host";
+                syncDot.className = "w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse";
+            });
+
+            conn.on('data', (data) => {
+                if (data && data.type === "STATE_UPDATE" && data.payload) {
+                    applyReceivedState(data.payload);
+                }
+            });
+
+            conn.on('close', () => {
+                syncText.innerText = "Reconnecting...";
+                syncDot.className = "w-2.5 h-2.5 rounded-full bg-amber-400 animate-ping";
+                setTimeout(() => connectToHost(hostPeerId), 3000);
+            });
+        }
+
+        function initCrossTabBroadcast() {
+            if ('BroadcastChannel' in window) {
+                broadcastChannel = new BroadcastChannel(`opp_channel_${sessionId}`);
+                broadcastChannel.onmessage = (event) => {
+                    if (!isAdmin && event.data && event.data.payload) {
+                        applyReceivedState(event.data.payload);
+                    }
+                };
+            }
+        }
+
+        function broadcastStateToAll() {
+            if (!isAdmin) return;
+
+            const state = getSerializedState();
+
+            if (broadcastChannel) {
+                broadcastChannel.postMessage({ payload: state });
+            }
+
+            activePeerConns.forEach(conn => {
+                if (conn.open) {
+                    conn.send({
+                        type: "STATE_UPDATE",
+                        payload: state
+                    });
+                }
+            });
+
+            renderAll();
+        }
+
+        function getSerializedState() {
+            return { sessionConfig, players, partnerHistoryMatrix, courts, queue, matchHistory };
+        }
+
+        function applyReceivedState(state) {
+            sessionConfig = state.sessionConfig || sessionConfig;
+            players = state.players || players;
+            partnerHistoryMatrix = state.partnerHistoryMatrix || partnerHistoryMatrix;
+            courts = state.courts || courts;
+            queue = state.queue || queue;
+            matchHistory = state.matchHistory || matchHistory;
+
+            renderAll();
+        }
+
+        function getPartnerCount(p1Id, p2Id) {
+            const key1 = `${p1Id}_${p2Id}`;
+            const key2 = `${p2Id}_${p1Id}`;
+            return (partnerHistoryMatrix[key1] || 0) + (partnerHistoryMatrix[key2] || 0);
+        }
+
+        function recordPartnerPair(p1Id, p2Id) {
+            const key = `${p1Id}_${p2Id}`;
+            partnerHistoryMatrix[key] = (partnerHistoryMatrix[key] || 0) + 1;
+        }
+
+        function sortQueueByFairness() {
+            queue.sort((idA, idB) => {
+                const pA = players.find(x => x.id === idA);
+                const pB = players.find(x => x.id === idB);
+                if (!pA || !pB) return 0;
+
+                // Priority 1: FEWEST total games played
+                if (pA.gamesPlayed !== pB.gamesPlayed) {
+                    return pA.gamesPlayed - pB.gamesPlayed;
+                }
+
+                // Priority 2: LONGEST bench rest time
+                const lastA = pA.lastMatchTime || 0;
+                const lastB = pB.lastMatchTime || 0;
+                return lastA - lastB;
+            });
+        }
+
+        function pickNextFourPlayers() {
+            if (queue.length < 4) return null;
+
+            const availableQueue = queue.filter(id => {
+                const p = players.find(x => x.id === id);
+                return p && p.status === 'active';
+            });
+
+            if (availableQueue.length < 4) return null;
+
+            // Pick top 4 from fair rotation queue
+            let selectedIds = availableQueue.slice(0, 4);
+
+            // Handle Fixed Partner Locks if enabled
+            if (sessionConfig.partnerMatchingMode === 'locked') {
+                for (let id of selectedIds) {
+                    const p = players.find(x => x.id === id);
+                    if (p && p.lockedPartnerId && availableQueue.includes(p.lockedPartnerId)) {
+                        if (!selectedIds.includes(p.lockedPartnerId)) {
+                            selectedIds[3] = p.lockedPartnerId; // Bring in locked partner
+                        }
+                    }
+                }
+            }
+
+            const pObjs = selectedIds.map(id => players.find(x => x.id === id));
+
+            // Determine best Team A & Team B pairings based on selected Partner Matching Mode
+            const pairings = [
+                { teamA: [pObjs[0].id, pObjs[1].id], teamB: [pObjs[2].id, pObjs[3].id] },
+                { teamA: [pObjs[0].id, pObjs[2].id], teamB: [pObjs[1].id, pObjs[3].id] },
+                { teamA: [pObjs[0].id, pObjs[3].id], teamB: [pObjs[1].id, pObjs[2].id] }
+            ];
+
+            if (sessionConfig.partnerMatchingMode === 'locked') {
+                for (let pair of pairings) {
+                    const pA1 = players.find(x => x.id === pair.teamA[0]);
+                    const pA2 = players.find(x => x.id === pair.teamA[1]);
+                    if (pA1.lockedPartnerId === pA2.id) return pair;
+                }
+            }
+
+            if (sessionConfig.partnerMatchingMode === 'rotate') {
+                // Find pairing combination with MINIMUM prior joint partner history
+                let bestPairing = pairings[0];
+                let minHistoryCount = Infinity;
+
+                pairings.forEach(pair => {
+                    const countA = getPartnerCount(pair.teamA[0], pair.teamA[1]);
+                    const countB = getPartnerCount(pair.teamB[0], pair.teamB[1]);
+                    const totalHistory = countA + countB;
+
+                    if (totalHistory < minHistoryCount) {
+                        minHistoryCount = totalHistory;
+                        bestPairing = pair;
+                    }
+                });
+
+                return bestPairing;
+            }
+
+            // Default / Random Mode
+            return pairings[0];
+        }
+
+        function speakMatchAnnouncement(courtName, teamAIds, teamBIds) {
+            if ('speechSynthesis' in window) {
+                const pA1 = getPlayerName(teamAIds[0]);
+                const pA2 = getPlayerName(teamAIds[1]);
+                const pB1 = getPlayerName(teamBIds[0]);
+                const pB2 = getPlayerName(teamBIds[1]);
+
+                const text = `Match starting on ${courtName}. ${pA1} and ${pA2} versus ${pB1} and ${pB2}.`;
+                const utterance = new SpeechSynthesisUtterance(text);
+                utterance.rate = 0.95;
+                window.speechSynthesis.speak(utterance);
+            }
+        }
+
+        function renderAll() {
+            renderHeaderStats();
+            renderCourts();
+            renderQueue();
+            renderRoster();
+            renderPartnerMatrix();
+            renderLeaderboard();
+            renderHistory();
+        }
+
+        function renderCourts() {
+            const grid = document.getElementById('courts-grid');
+            grid.innerHTML = '';
+
+            courts.forEach(court => {
+                const isOccupied = court.status === 'active';
+                const teamANames = court.teamA.map(id => getPlayerName(id));
+                const teamBNames = court.teamB.map(id => getPlayerName(id));
+
+                const courtCard = document.createElement('div');
+                courtCard.className = `glass-panel rounded-2xl border p-5 relative transition ${isOccupied ? 'border-slate-800' : 'border-dashed border-slate-800 bg-slate-900/30'}`;
+
+                if(!isOccupied) {
+                    courtCard.innerHTML = `
+                        <div class="flex items-center justify-between mb-6">
+                            <div class="flex items-center gap-2">
+                                <span class="w-3 h-3 rounded-full bg-slate-600"></span>
+                                <h3 class="font-display font-bold text-slate-300 text-lg">${court.name}</h3>
+                            </div>
+                            <span class="text-xs font-semibold px-2.5 py-1 bg-slate-800 text-slate-400 rounded-full">Open Court</span>
+                        </div>
+                        <div class="py-8 text-center space-y-3">
+                            <div class="w-12 h-12 rounded-full bg-slate-800 text-slate-500 mx-auto flex items-center justify-center text-xl">
+                                <i class="fa-solid fa-table-tennis-paddle-ball"></i>
+                            </div>
+                            <p class="text-xs text-slate-400">${isAdmin ? 'Court ready for partner rotation.' : 'Awaiting next match assignment.'}</p>
+                            ${isAdmin ? `
+                                <button onclick="autoFillSingleCourt('${court.id}')" class="px-4 py-2 bg-brand-neon/20 hover:bg-brand-neon text-brand-neon hover:text-slate-950 font-bold text-xs rounded-xl transition border border-brand-neon/30 inline-flex items-center gap-2 public-btn">
+                                    <i class="fa-solid fa-wand-magic-sparkles"></i> Assign Fair Queue
+                                </button>
+                            ` : ''}
+                        </div>
+                    `;
+                } else {
+                    courtCard.innerHTML = `
+                        <div class="flex items-center justify-between mb-4 pb-3 border-b border-slate-800">
+                            <div class="flex items-center gap-2">
+                                <span class="w-3 h-3 rounded-full bg-brand-neon animate-pulse"></span>
+                                <h3 class="font-display font-bold text-white text-lg">${court.name}</h3>
+                            </div>
+                            <span id="timer-${court.id}" class="text-xs font-mono bg-slate-900 px-2.5 py-1 rounded-md border border-slate-800 text-brand-neon font-semibold">
+                                <i class="fa-solid fa-stopwatch mr-1"></i>${getElapsedTime(court.startTime)}
+                            </span>
+                        </div>
+
+                        <div class="grid grid-cols-2 gap-4 my-3 text-center relative">
+                            <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
+                                <span class="bg-slate-900 border border-slate-700 text-slate-400 font-black text-[10px] px-2 py-1 rounded-full uppercase tracking-wider">VS</span>
+                            </div>
+
+                            <div class="p-3.5 bg-slate-900/90 rounded-xl border border-slate-800 space-y-1">
+                                <div class="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Team A</div>
+                                <div class="text-xs font-bold text-slate-100 truncate">${teamANames[0] || 'Player 1'}</div>
+                                <div class="text-xs font-bold text-slate-100 truncate">${teamANames[1] || 'Player 2'}</div>
+                            </div>
+
+                            <div class="p-3.5 bg-slate-900/90 rounded-xl border border-slate-800 space-y-1">
+                                <div class="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Team B</div>
+                                <div class="text-xs font-bold text-slate-100 truncate">${teamBNames[0] || 'Player 3'}</div>
+                                <div class="text-xs font-bold text-slate-100 truncate">${teamBNames[1] || 'Player 4'}</div>
+                            </div>
+                        </div>
+
+                        ${isAdmin ? `
+                            <div class="mt-4 pt-3 border-t border-slate-800 space-y-2">
+                                <div class="text-[11px] font-bold text-slate-400 text-center uppercase tracking-wider">Select Winning Pair</div>
+                                <div class="grid grid-cols-2 gap-2">
+                                    <button onclick="recordMatchResult('${court.id}', 'A')" class="py-2.5 bg-brand-neon/10 hover:bg-brand-neon text-brand-neon hover:text-slate-950 font-extrabold text-xs rounded-xl border border-brand-neon/40 transition shadow-sm flex items-center justify-center gap-1.5 public-btn">
+                                        <i class="fa-solid fa-trophy"></i> Team A Won
+                                    </button>
+                                    <button onclick="recordMatchResult('${court.id}', 'B')" class="py-2.5 bg-brand-neon/10 hover:bg-brand-neon text-brand-neon hover:text-slate-950 font-extrabold text-xs rounded-xl border border-brand-neon/40 transition shadow-sm flex items-center justify-center gap-1.5 public-btn">
+                                        <i class="fa-solid fa-trophy"></i> Team B Won
+                                    </button>
+                                </div>
+                                <div class="text-center pt-1">
+                                    <button onclick="clearCourtMatch('${court.id}')" class="text-[11px] text-rose-400 hover:underline public-btn">
+                                        Cancel Game (Return Players)
+                                    </button>
+                                </div>
+                            </div>
+                        ` : `
+                            <div class="mt-4 pt-3 border-t border-slate-800 text-center">
+                                <span class="text-[10px] text-brand-neon font-semibold uppercase tracking-widest"><i class="fa-solid fa-play mr-1"></i> Live Match In Progress</span>
+                            </div>
+                        `}
+                    `;
+                }
+                grid.appendChild(courtCard);
+            });
+        }
+
+        function recordMatchResult(courtId, winningTeamKey) {
+            if (!isAdmin) return;
+
+            const court = courts.find(c => c.id === courtId);
+            if (!court || court.status !== 'active') return;
+
+            const winningPlayerIds = winningTeamKey === 'A' ? court.teamA : court.teamB;
+            const losingPlayerIds = winningTeamKey === 'A' ? court.teamB : court.teamA;
+            const allMatchPlayers = [...court.teamA, ...court.teamB];
+
+            // Record Partner Pairs History
+            recordPartnerPair(court.teamA[0], court.teamA[1]);
+            recordPartnerPair(court.teamB[0], court.teamB[1]);
+
+            const matchRecord = {
+                id: "m_" + Date.now(),
+                timestamp: new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}),
+                courtName: court.name,
+                winningTeam: [...winningPlayerIds],
+                losingTeam: [...losingPlayerIds]
+            };
+            matchHistory.unshift(matchRecord);
+
+            const now = Date.now();
+
+            allMatchPlayers.forEach(id => {
+                const p = players.find(x => x.id === id);
+                if (p) {
+                    p.gamesPlayed++;
+                    p.lastMatchTime = now;
+                    if (winningPlayerIds.includes(id)) {
+                        p.wins++;
+                        p.streak = (p.streak >= 0) ? p.streak + 1 : 1;
+                    } else {
+                        p.losses++;
+                        p.streak = 0;
+                    }
+                }
+            });
+
+            // Return players to queue
+            allMatchPlayers.forEach(pid => {
+                const p = players.find(x => x.id === pid);
+                if (p && p.status === 'active' && !queue.includes(pid)) {
+                    queue.push(pid);
+                }
+            });
+
+            court.status = 'empty';
+            court.teamA = [];
+            court.teamB = [];
+            court.startTime = null;
+
+            sortQueueByFairness();
+            autoFillSingleCourt(courtId);
+            broadcastStateToAll();
+        }
+
+        function clearCourtMatch(courtId) {
+            if (!isAdmin) return;
+            const court = courts.find(c => c.id === courtId);
+            if (!court) return;
+
+            const playersOnCourt = [...court.teamA, ...court.teamB];
+            playersOnCourt.forEach(pid => {
+                if (!queue.includes(pid)) queue.push(pid);
+            });
+
+            court.status = 'empty';
+            court.teamA = [];
+            court.teamB = [];
+            court.startTime = null;
+
+            sortQueueByFairness();
+            broadcastStateToAll();
+        }
+
+        function addNewCourt() {
+            if (!isAdmin) return;
+            const newNum = courts.length + 1;
+            courts.push({
+                id: "c" + Date.now(),
+                name: `Court ${newNum}`,
+                status: "empty",
+                teamA: [],
+                teamB: [],
+                startTime: null
+            });
+            broadcastStateToAll();
+        }
+
+        function renderQueue() {
+            const queueListEl = document.getElementById('queue-players-list');
+            queueListEl.innerHTML = '';
+
+            if (queue.length === 0) {
+                queueListEl.innerHTML = `<div class="col-span-full text-center py-6 text-xs text-slate-500">Queue is empty.</div>`;
+                return;
+            }
+
+            queue.forEach((pid, idx) => {
+                const player = players.find(p => p.id === pid);
+                if (!player) return;
+
+                const restMins = Math.max(0, Math.floor((Date.now() - (player.lastMatchTime || Date.now())) / (1000 * 60)));
+
+                const card = document.createElement('div');
+                card.className = `p-3 rounded-xl border ${idx < 4 ? 'bg-slate-900 border-brand-neon/40 shadow-sm shadow-brand-neon/10' : 'bg-slate-900/50 border-slate-800'} flex items-center justify-between gap-2`;
+
+                card.innerHTML = `
+                    <div class="flex items-center gap-2.5 overflow-hidden">
+                        <span class="w-5 h-5 rounded-md ${idx < 4 ? 'bg-brand-neon text-slate-950 font-black' : 'bg-slate-800 text-slate-400 font-bold'} text-[10px] flex items-center justify-center shrink-0">
+                            ${idx + 1}
+                        </span>
+                        <div class="truncate">
+                            <div class="text-xs font-bold text-slate-200 truncate flex items-center gap-1">
+                                ${player.name}
+                                ${player.lockedPartnerId ? `<i class="fa-solid fa-lock text-[10px] text-amber-400" title="Partner Locked"></i>` : ''}
+                            </div>
+                            <div class="text-[10px] text-slate-400 flex items-center gap-2 mt-0.5">
+                                <span class="text-brand-neon font-bold">${player.gamesPlayed} games</span>
+                                <span>•</span>
+                                <span>Rest: ${restMins}m</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    ${isAdmin ? `
+                        <div class="flex items-center gap-1 shrink-0">
+                            <button onclick="togglePlayerStatus('${player.id}')" title="Pause" class="p-1 text-slate-400 hover:text-amber-400 public-btn"><i class="fa-solid fa-circle-pause text-[10px]"></i></button>
+                        </div>
+                    ` : ''}
+                `;
+
+                queueListEl.appendChild(card);
+            });
+        }
+
+        function autoFillSingleCourt(courtId) {
+            if (!isAdmin) return;
+            const court = courts.find(c => c.id === courtId);
+            if (!court || court.status === 'active') return;
+
+            sortQueueByFairness();
+            const match = pickNextFourPlayers();
+            if (!match) return;
+
+            court.teamA = match.teamA;
+            court.teamB = match.teamB;
+            court.status = 'active';
+            court.startTime = Date.now();
+
+            const assignedIds = [...match.teamA, ...match.teamB];
+            queue = queue.filter(id => !assignedIds.includes(id));
+
+            speakMatchAnnouncement(court.name, match.teamA, match.teamB);
+            broadcastStateToAll();
+        }
+
+        function triggerGlobalAutoMatch() {
+            if (!isAdmin) return;
+            sortQueueByFairness();
+            courts.forEach(court => {
+                if (court.status === 'empty' && queue.length >= 4) {
+                    autoFillSingleCourt(court.id);
+                }
+            });
+        }
+
+        function setPartnerMatchingMode(mode) {
+            if (!isAdmin) return;
+            sessionConfig.partnerMatchingMode = mode;
+            sortQueueByFairness();
+            broadcastStateToAll();
+        }
+
+        function renderRoster() {
+            const tbody = document.getElementById('roster-table-body');
+            tbody.innerHTML = '';
+
+            players.forEach(player => {
+                const partnerObj = player.lockedPartnerId ? players.find(x => x.id === player.lockedPartnerId) : null;
+
+                const tr = document.createElement('tr');
+                tr.className = 'hover:bg-slate-900/40 transition';
+
+                tr.innerHTML = `
+                    <td class="p-4"><div class="font-bold text-slate-100">${player.name}</div></td>
+                    <td class="p-4"><span class="bg-slate-900 text-brand-neon px-2.5 py-1 rounded-md border border-slate-800 font-bold text-xs">${player.rating.toFixed(1)}</span></td>
+                    <td class="p-4">
+                        <span class="px-2.5 py-1 rounded-full text-[11px] font-semibold ${player.status === 'active' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30' : 'bg-amber-500/10 text-amber-400 border border-amber-500/30'}">
+                            ${player.status === 'active' ? 'Active' : 'Resting'}
+                        </span>
+                    </td>
+                    <td class="p-4">
+                        ${partnerObj ? `
+                            <span class="bg-amber-500/10 text-amber-400 border border-amber-500/30 px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1.5 w-max">
+                                <i class="fa-solid fa-lock text-[10px]"></i> ${partnerObj.name}
+                            </span>
+                        ` : `<span class="text-xs text-slate-500 font-medium">Rotate Freely</span>`}
+                    </td>
+                    <td class="p-4 text-center font-mono font-extrabold text-brand-neon text-base">${player.gamesPlayed}</td>
+                    <td class="p-4 text-xs font-semibold">
+                        <span class="text-emerald-400">${player.wins} W</span> - <span class="text-rose-400">${player.losses} L</span>
+                    </td>
+                    ${isAdmin ? `
+                        <td class="p-4 text-right space-x-2">
+                            <button onclick="editPlayer('${player.id}')" class="p-1.5 text-slate-400 hover:text-white public-btn"><i class="fa-solid fa-pen-to-square"></i></button>
+                            <button onclick="deletePlayer('${player.id}')" class="p-1.5 text-slate-400 hover:text-rose-400 public-btn"><i class="fa-solid fa-trash"></i></button>
+                        </td>
+                    ` : ''}
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        function renderPartnerMatrix() {
+            const table = document.getElementById('partner-matrix-table');
+            table.innerHTML = '';
+
+            if (players.length === 0) return;
+
+            let headerRow = '<tr class="border-b border-slate-800"><th class="p-2 text-left text-slate-400">Player</th>';
+            players.forEach(p => {
+                headerRow += `<th class="p-2 text-slate-300 font-bold truncate max-w-[80px]" title="${p.name}">${p.name.split(' ')[0]}</th>`;
+            });
+            headerRow += '</tr>';
+
+            let bodyRows = '';
+            players.forEach(pRow => {
+                bodyRows += `<tr class="border-b border-slate-800/60"><td class="p-2 text-left font-bold text-slate-200 truncate max-w-[100px]">${pRow.name}</td>`;
+                players.forEach(pCol => {
+                    if (pRow.id === pCol.id) {
+                        bodyRows += `<td class="p-2 bg-slate-900/80 text-slate-600">-</td>`;
+                    } else {
+                        const count = getPartnerCount(pRow.id, pCol.id);
+                        bodyRows += `<td class="p-2 font-mono font-bold ${count > 0 ? 'text-brand-neon bg-brand-neon/5' : 'text-slate-500'}">${count}</td>`;
+                    }
+                });
+                bodyRows += '</tr>';
+            });
+
+            table.innerHTML = headerRow + bodyRows;
+        }
+
+        function renderLeaderboard() {
+            const tbody = document.getElementById('leaderboard-table-body');
+            tbody.innerHTML = '';
+
+            const sorted = [...players].sort((a,b) => {
+                if (b.wins !== a.wins) return b.wins - a.wins;
+                const pctA = a.gamesPlayed > 0 ? (a.wins / a.gamesPlayed) : 0;
+                const pctB = b.gamesPlayed > 0 ? (b.wins / b.gamesPlayed) : 0;
+                return pctB - pctA;
+            });
+
+            sorted.forEach((p, idx) => {
+                const winPct = p.gamesPlayed > 0 ? Math.round((p.wins / p.gamesPlayed) * 100) : 0;
+
+                const tr = document.createElement('tr');
+                tr.className = 'hover:bg-slate-900/40 transition';
+
+                tr.innerHTML = `
+                    <td class="p-4 text-center font-bold ${idx < 3 ? 'text-brand-neon' : 'text-slate-400'}">#${idx + 1}</td>
+                    <td class="p-4 font-bold text-slate-100">${p.name}</td>
+                    <td class="p-4"><span class="text-xs font-semibold text-brand-neon bg-slate-900 px-2 py-0.5 rounded border border-slate-800">${p.rating.toFixed(1)}</span></td>
+                    <td class="p-4 text-center font-mono text-slate-300">${p.gamesPlayed}</td>
+                    <td class="p-4 text-center font-mono text-emerald-400 font-extrabold text-base">${p.wins}</td>
+                    <td class="p-4 text-center font-mono text-rose-400 font-bold">${p.losses}</td>
+                    <td class="p-4 text-center"><span class="font-bold text-xs ${winPct >= 50 ? 'text-brand-neon' : 'text-slate-400'}">${winPct}%</span></td>
+                    <td class="p-4 text-center"><span class="text-xs font-bold ${p.streak > 0 ? 'text-amber-400' : 'text-slate-500'}">${p.streak > 0 ? `🔥 ${p.streak}` : '0'}</span></td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        function renderHistory() {
+            const listEl = document.getElementById('history-log-list');
+            listEl.innerHTML = '';
+
+            if (matchHistory.length === 0) {
+                listEl.innerHTML = `<div class="p-8 text-center text-xs text-slate-500">No matches recorded yet.</div>`;
+                return;
+            }
+
+            matchHistory.forEach(match => {
+                const winningNames = match.winningTeam.map(id => getPlayerName(id)).join(' & ');
+                const losingNames = match.losingTeam.map(id => getPlayerName(id)).join(' & ');
+
+                const item = document.createElement('div');
+                item.className = 'p-4 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 hover:bg-slate-900/40 transition';
+
+                item.innerHTML = `
+                    <div class="space-y-1">
+                        <div class="flex items-center gap-2 text-xs text-slate-400">
+                            <span class="font-bold text-brand-neon">${match.courtName}</span>
+                            <span>•</span>
+                            <span>${match.timestamp}</span>
+                        </div>
+                        <div class="text-sm font-semibold text-slate-200 flex flex-wrap items-center gap-2">
+                            <span class="text-emerald-400 font-bold"><i class="fa-solid fa-trophy text-amber-400 mr-1"></i>${winningNames} (WON)</span>
+                            <span class="text-slate-500 font-bold text-xs">def.</span>
+                            <span class="text-slate-400">${losingNames}</span>
+                        </div>
+                    </div>
+
+                    ${isAdmin ? `
+                        <button onclick="undoMatch('${match.id}')" class="px-3 py-1.5 bg-slate-800 hover:bg-rose-500/20 hover:text-rose-300 text-slate-400 rounded-lg text-xs font-semibold border border-slate-700 transition flex items-center gap-1.5 public-btn">
+                            <i class="fa-solid fa-rotate-left"></i> Revert Result
+                        </button>
+                    ` : ''}
+                `;
+                listEl.appendChild(item);
+            });
+        }
+
+        function undoMatch(matchId) {
+            if (!isAdmin) return;
+            const index = matchHistory.findIndex(m => m.id === matchId);
+            if (index === -1) return;
+
+            const match = matchHistory[index];
+            const allMatchPlayers = [...match.winningTeam, ...match.losingTeam];
+
+            allMatchPlayers.forEach(id => {
+                const p = players.find(x => x.id === id);
+                if (p) {
+                    p.gamesPlayed = Math.max(0, p.gamesPlayed - 1);
+                    if (match.winningTeam.includes(id)) {
+                        p.wins = Math.max(0, p.wins - 1);
+                        p.streak = Math.max(0, p.streak - 1);
+                    } else {
+                        p.losses = Math.max(0, p.losses - 1);
+                    }
+                }
+            });
+
+            matchHistory.splice(index, 1);
+            sortQueueByFairness();
+            broadcastStateToAll();
+        }
+
+        function openQrModal() {
+            if (!isAdmin) return;
+
+            const baseUrl = window.location.protocol + '//' + window.location.host + window.location.pathname;
+            const spectatorUrl = `${baseUrl}?session=${sessionId}&mode=spectator`;
+
+            document.getElementById('qr-url-text').innerText = spectatorUrl;
+
+            const qrContainer = document.getElementById('qrcode-canvas');
+            qrContainer.innerHTML = '';
+            
+            if (window.QRCode) {
+                new QRCode(qrContainer, {
+                    text: spectatorUrl,
+                    width: 200,
+                    height: 200,
+                    colorDark: "#090d16",
+                    colorLight: "#ffffff",
+                    correctLevel: QRCode.CorrectLevel.H
+                });
+            }
+
+            document.getElementById('modal-qr').classList.remove('hidden');
+        }
+
+        function closeQrModal() {
+            document.getElementById('modal-qr').classList.add('hidden');
+        }
+
+        function copyQrUrl() {
+            const baseUrl = window.location.protocol + '//' + window.location.host + window.location.pathname;
+            const spectatorUrl = `${baseUrl}?session=${sessionId}&mode=spectator`;
+
+            const input = document.createElement('input');
+            input.value = spectatorUrl;
+            document.body.appendChild(input);
+            input.select();
+            document.execCommand('copy');
+            document.body.removeChild(input);
+            showToast("Copied Player Spectator Link!");
+        }
+
+        function openAddPlayerModal() {
+            if (!isAdmin) return;
+            document.getElementById('modal-player-title').innerText = "Add New Player";
+            document.getElementById('player-id').value = "";
+            document.getElementById('player-name').value = "";
+            document.getElementById('player-rating').value = "3.5";
+            
+            populatePartnerSelect("");
+            document.getElementById('modal-player').classList.remove('hidden');
+        }
+
+        function editPlayer(playerId) {
+            if (!isAdmin) return;
+            const player = players.find(p => p.id === playerId);
+            if (!player) return;
+
+            document.getElementById('modal-player-title').innerText = "Edit Player";
+            document.getElementById('player-id').value = player.id;
+            document.getElementById('player-name').value = player.name;
+            document.getElementById('player-rating').value = player.rating;
+
+            populatePartnerSelect(player.id, player.lockedPartnerId);
+            document.getElementById('modal-player').classList.remove('hidden');
+        }
+
+        function populatePartnerSelect(currentPlayerId, selectedPartnerId = "") {
+            const select = document.getElementById('player-partner-lock');
+            select.innerHTML = `<option value="">-- No Lock (Rotate Freely) --</option>`;
+
+            players.forEach(p => {
+                if (p.id !== currentPlayerId) {
+                    const opt = document.createElement('option');
+                    opt.value = p.id;
+                    opt.innerText = p.name;
+                    if (p.id === selectedPartnerId) opt.selected = true;
+                    select.appendChild(opt);
+                }
+            });
+        }
+
+        function closePlayerModal() {
+            document.getElementById('modal-player').classList.add('hidden');
+        }
+
+        function handleSavePlayer(event) {
+            event.preventDefault();
+            if (!isAdmin) return;
+
+            const id = document.getElementById('player-id').value;
+            const name = document.getElementById('player-name').value.trim();
+            const rating = parseFloat(document.getElementById('player-rating').value) || 3.0;
+            const partnerLockId = document.getElementById('player-partner-lock').value || null;
+
+            if (!name) return;
+
+            if (id) {
+                const p = players.find(x => x.id === id);
+                if (p) {
+                    p.name = name;
+                    p.rating = rating;
+                    
+                    // Clear previous partner lock
+                    if (p.lockedPartnerId && p.lockedPartnerId !== partnerLockId) {
+                        const oldP = players.find(x => x.id === p.lockedPartnerId);
+                        if (oldP) oldP.lockedPartnerId = null;
+                    }
+
+                    p.lockedPartnerId = partnerLockId;
+
+                    // Bi-directional lock
+                    if (partnerLockId) {
+                        const newPartner = players.find(x => x.id === partnerLockId);
+                        if (newPartner) newPartner.lockedPartnerId = p.id;
+                    }
+                }
+            } else {
+                const newId = "p_" + Date.now();
+                const newPlayer = {
+                    id: newId,
+                    name: name,
+                    rating: rating,
+                    status: "active",
+                    lockedPartnerId: partnerLockId,
+                    wins: 0,
+                    losses: 0,
+                    gamesPlayed: 0,
+                    lastMatchTime: 0,
+                    streak: 0
+                };
+
+                players.push(newPlayer);
+                queue.push(newId);
+
+                if (partnerLockId) {
+                    const partner = players.find(x => x.id === partnerLockId);
+                    if (partner) partner.lockedPartnerId = newId;
+                }
+            }
+
+            closePlayerModal();
+            sortQueueByFairness();
+            broadcastStateToAll();
+        }
+
+        function deletePlayer(playerId) {
+            if (!isAdmin) return;
+            players = players.filter(x => x.id !== playerId);
+            queue = queue.filter(id => id !== playerId);
+            
+            // Clean up locks
+            players.forEach(p => {
+                if (p.lockedPartnerId === playerId) p.lockedPartnerId = null;
+            });
+
+            sortQueueByFairness();
+            broadcastStateToAll();
+        }
+
+        function togglePlayerStatus(playerId) {
+            if (!isAdmin) return;
+            const player = players.find(p => p.id === playerId);
+            if (!player) return;
+
+            if (player.status === 'active') {
+                player.status = 'paused';
+                queue = queue.filter(id => id !== playerId);
+            } else {
+                player.status = 'active';
+                if (!queue.includes(playerId)) queue.push(playerId);
+            }
+
+            sortQueueByFairness();
+            broadcastStateToAll();
+        }
+
+        function switchTab(tabId) {
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                btn.classList.remove('active', 'border-b-2', 'border-brand-neon', 'text-brand-neon');
+                btn.classList.add('text-slate-400');
+            });
+
+            const activeBtn = document.getElementById(`tab-${tabId}`);
+            if (activeBtn) {
+                activeBtn.classList.add('active', 'border-b-2', 'border-brand-neon', 'text-brand-neon');
+                activeBtn.classList.remove('text-slate-400');
+            }
+
+            document.querySelectorAll('.tab-content').forEach(view => view.classList.add('hidden'));
+            const targetView = document.getElementById(`view-${tabId}`);
+            if (targetView) targetView.classList.remove('hidden');
+        }
+
+        function renderHeaderStats() {
+            const activeCount = courts.filter(c => c.status === 'active').length;
+            document.getElementById('badge-active-matches').innerText = `${activeCount} Active`;
+        }
+
+        function startTimerLoop() {
+            if (timerInterval) clearInterval(timerInterval);
+            timerInterval = setInterval(() => {
+                courts.forEach(court => {
+                    if (court.status === 'active' && court.startTime) {
+                        const el = document.getElementById(`timer-${court.id}`);
+                        if (el) el.innerHTML = `<i class="fa-solid fa-stopwatch mr-1"></i>${getElapsedTime(court.startTime)}`;
+                    }
+                });
+            }, 1000);
+        }
+
+        function getElapsedTime(startTime) {
+            if (!startTime) return "00:00";
+            const diff = Math.floor((Date.now() - startTime) / 1000);
+            const mins = Math.floor(diff / 60).toString().padStart(2, '0');
+            const secs = (diff % 60).toString().padStart(2, '0');
+            return `${mins}:${secs}`;
+        }
+
+        function getPlayerName(id) {
+            const p = players.find(x => x.id === id);
+            return p ? p.name : 'Unknown';
+        }
+
+        function showToast(msg) {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            toast.className = 'glass-panel bg-slate-900/90 text-white border border-brand-neon/40 px-4 py-2.5 rounded-xl text-xs font-semibold shadow-xl flex items-center gap-2 pointer-events-auto transform transition duration-300 translate-y-2 opacity-0';
+            toast.innerHTML = `<i class="fa-solid fa-circle-info text-brand-neon"></i><span>${msg}</span>`;
+
+            container.appendChild(toast);
+            setTimeout(() => toast.classList.remove('translate-y-2', 'opacity-0'), 10);
+            setTimeout(() => {
+                toast.classList.add('opacity-0', 'translate-y-2');
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
+        }
+    </script>
+</body>
+</html>
